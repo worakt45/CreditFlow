@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>แพลตฟอร์มประเมินวงเงินสินเชื่อวัสดุก่อสร้าง</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Chosen Palette: Earthtones (Deep Olive, Warm Sand) with Silver, Black, White, and Gold Accents -->
+    <!-- Application Structure Plan: The SPA is structured as a modern web dashboard with three primary views: 'Dashboard Overview', 'Assessment Tool', and 'Approval Management'. This architecture maps directly to the required workflow, allowing users (Sales/Credit teams) to monitor high-level metrics, conduct step-by-step interactive credit evaluations mimicking a conversational bot flow, and manage the final approval stages in a single, fluid interface without page reloads. -->
+    <!-- Visualization & Content Choices: 
+         1. Overview Chart -> Goal: Inform on system usage -> Bar Chart (Chart.js) -> Interactive tooltips -> Best for comparing monthly volumes. 
+         2. Risk Scoring -> Goal: Gauge assessment result -> Half-Doughnut Chart (Chart.js) -> Visualizes score 0-100 clearly -> Replaces static text with an impactful visual. 
+         3. Financial Benchmarking -> Goal: Compare company vs industry -> Horizontal Bar Chart (Chart.js) -> Highlights discrepancies like AR Days -> Easier to read labels.
+         Confirmed: NO SVG or Mermaid JS used. All visual elements utilize CSS styling, Canvas, or Unicode. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+            background-color: #F4F3ED; 
+            color: #1E293B;
+        }
+        
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+
+        .bg-olive { background-color: #3B4335; }
+        .text-olive { color: #3B4335; }
+        .bg-sand { background-color: #F4F3ED; }
+        .text-gold { color: #C5A059; }
+        .bg-gold { background-color: #C5A059; }
+        .border-gold { border-color: #C5A059; }
+        .hover-bg-gold:hover { background-color: #B38E4A; }
+        .text-silver { color: #88929C; }
+        .bg-silver { background-color: #88929C; }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .step-transition {
+            transition: all 0.4s ease-in-out;
+            opacity: 0;
+            transform: translateY(10px);
+            display: none;
+        }
+
+        .step-active {
+            opacity: 1;
+            transform: translateY(0);
+            display: block;
+        }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden antialiased">
+
+    <aside class="w-64 bg-olive text-white flex flex-col hidden md:flex z-20 shadow-2xl">
+        <div class="p-6 flex items-center gap-3 border-b border-gray-600/30">
+            <span class="text-3xl text-gold">&#128176;</span>
+            <h1 class="text-xl font-bold tracking-wide uppercase">Credit<span class="text-gold">Flow</span></h1>
+        </div>
+        <nav class="flex-1 px-4 py-6 space-y-2">
+            <button onclick="navTo('dashboard')" id="nav-dashboard" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-white/10 text-gold font-medium transition-colors">
+                <span>&#128202;</span> ภาพรวมระบบ
+            </button>
+            <button onclick="navTo('assessment')" id="nav-assessment" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/5 transition-colors">
+                <span>&#128269;</span> ประเมินวงเงินใหม่
+            </button>
+            <button onclick="navTo('approvals')" id="nav-approvals" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/5 transition-colors">
+                <span>&#128194;</span> รายการรออนุมัติ
+            </button>
+        </nav>
+        <div class="p-4 border-t border-gray-600/30 text-sm text-gray-400">
+            <p>ผู้ใช้งาน: คุณสมหญิง (ฝ่ายเครดิต)</p>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col h-screen overflow-y-auto relative">
+        <header class="md:hidden bg-olive text-white p-4 flex justify-between items-center shadow-md">
+            <h1 class="text-lg font-bold">Credit<span class="text-gold">Flow</span></h1>
+            <select onchange="navTo(this.value)" class="bg-white/10 text-white rounded p-1 border-none outline-none">
+                <option value="dashboard" class="text-black">ภาพรวม</option>
+                <option value="assessment" class="text-black">ประเมิน</option>
+                <option value="approvals" class="text-black">อนุมัติ</option>
+            </select>
+        </header>
+
+        <div class="p-6 md:p-10 max-w-7xl mx-auto w-full">
+
+            <section id="view-dashboard" class="space-y-8">
+                <div>
+                    <h2 class="text-3xl font-bold text-olive mb-2">ภาพรวมระบบสินเชื่อ</h2>
+                    <p class="text-gray-600">ส่วนนี้แสดงข้อมูลเชิงปริมาณและสถิติการทำงานของทีมเครดิต ช่วยให้ผู้บริหารและทีมงานเห็นภาพรวมของวงเงินที่ถูกอนุมัติและความเร็วในการดำเนินการตามโครงสร้างรายงานการบริหาร</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="glass-panel p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500 font-medium">วงเงินอนุมัติเดือนนี้</p>
+                            <p class="text-3xl font-bold text-olive mt-1">฿45.2M</p>
+                        </div>
+                        <div class="h-12 w-12 rounded-full bg-gold/20 flex items-center justify-center text-gold text-xl">&#128181;</div>
+                    </div>
+                    <div class="glass-panel p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500 font-medium">รายการรออนุมัติ</p>
+                            <p class="text-3xl font-bold text-amber-600 mt-1">12 <span class="text-sm font-normal text-gray-400">รายการ</span></p>
+                        </div>
+                        <div class="h-12 w-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 text-xl">&#8987;</div>
+                    </div>
+                    <div class="glass-panel p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500 font-medium">เวลาเฉลี่ยในการอนุมัติ</p>
+                            <p class="text-3xl font-bold text-olive mt-1">1.5 <span class="text-sm font-normal text-gray-400">วัน</span></p>
+                        </div>
+                        <div class="h-12 w-12 rounded-full bg-olive/10 flex items-center justify-center text-olive text-xl">&#9201;</div>
+                    </div>
+                </div>
+
+                <div class="glass-panel p-6 rounded-2xl shadow-sm border border-gray-100">
+                    <h3 class="text-lg font-semibold text-olive mb-4">สถิติการขอวงเงินย้อนหลัง (6 เดือน)</h3>
+                    <div class="chart-container">
+                        <canvas id="dashboardChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <section id="view-assessment" class="hidden space-y-8">
+                <div>
+                    <h2 class="text-3xl font-bold text-olive mb-2">ระบบประเมินวงเงินอัจฉริยะ</h2>
+                    <p class="text-gray-600">จำลองขั้นตอนการทำงานของระบบแชทบอท โดยดึงข้อมูลจากกรมพัฒนาธุรกิจการค้า (DBD) มาประมวลผลร่วมกับเกณฑ์ความเสี่ยงภายใน เพื่อแนะนำวงเงินที่เหมาะสมและแจ้งเตือนจุดที่ต้องระวัง</p>
+                </div>
+
+                <div class="max-w-3xl mx-auto glass-panel rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+                    <div class="bg-olive p-4 text-white flex justify-between items-center">
+                        <span class="font-semibold">&#129302; AI Credit Assistant</span>
+                        <span class="text-xs bg-white/20 px-2 py-1 rounded">เชื่อมต่อ DBD แล้ว</span>
+                    </div>
+                    
+                    <div class="p-6 md:p-8 space-y-8">
+                        <div id="step-1" class="step-active">
+                            <h3 class="text-lg font-medium text-gray-800 mb-4">1. ระบุชื่อบริษัทเพื่อดึงข้อมูล</h3>
+                            <div class="flex gap-3">
+                                <input type="text" id="companyInput" placeholder="พิมพ์ชื่อบริษัท เช่น บ.สมชาย..." class="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold bg-white">
+                                <button onclick="processStep(1)" class="bg-gold hover-bg-gold text-white px-6 py-3 rounded-lg font-medium shadow-md transition-all">ค้นหา</button>
+                            </div>
+                        </div>
+
+                        <div id="step-2" class="step-transition">
+                            <h3 class="text-lg font-medium text-gray-800 mb-4 border-t pt-6">2. เลือกประเภทธุรกิจของลูกค้า</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <button onclick="processStep(2, 'contractor')" class="border-2 border-gray-200 rounded-xl p-6 text-left hover:border-gold hover:bg-gold/5 transition-all focus:outline-none">
+                                    <div class="text-3xl mb-2">&#127975;</div>
+                                    <h4 class="font-bold text-olive text-lg">ผู้รับเหมาก่อสร้าง</h4>
+                                    <p class="text-sm text-gray-500 mt-1">เน้นวิเคราะห์ความสามารถรับงานและสภาพคล่อง</p>
+                                </button>
+                                <button onclick="processStep(2, 'trader')" class="border-2 border-gray-200 rounded-xl p-6 text-left hover:border-gold hover:bg-gold/5 transition-all focus:outline-none">
+                                    <div class="text-3xl mb-2">&#128666;</div>
+                                    <h4 class="font-bold text-olive text-lg">ร้านค้าวัสดุก่อสร้าง</h4>
+                                    <p class="text-sm text-gray-500 mt-1">เน้นวิเคราะห์การหมุนเวียนสินค้าคงคลังหน้าร้าน</p>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="step-3" class="step-transition">
+                            <div class="border-t pt-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h3 class="text-lg font-medium text-gray-800">3. ตรวจสอบข้อมูลจาก DBD</h3>
+                                    <span class="text-xs font-bold text-green-600 bg-green-100 px-2 py-1 rounded-full">ดึงข้อมูลสำเร็จ</span>
+                                </div>
+                                <div class="bg-gray-50 p-5 rounded-xl border border-gray-200 space-y-4">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-500 mb-1">รายได้รวม (ปีล่าสุด)</label>
+                                            <input type="text" value="15,450,000 ฿" readonly class="w-full bg-white border border-gray-300 rounded px-3 py-2 text-gray-700 font-medium">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-500 mb-1">กำไรสุทธิ</label>
+                                            <input type="text" value="1,200,000 ฿" readonly class="w-full bg-white border border-gray-300 rounded px-3 py-2 text-gray-700 font-medium">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-500 mb-1">D/E Ratio (เท่า)</label>
+                                            <input type="number" step="0.1" value="2.1" id="inputDE" class="w-full bg-white border border-gold rounded px-3 py-2 text-gray-700 focus:outline-none focus:ring-1 focus:ring-gold">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-500 mb-1">ระยะเวลาเก็บหนี้ (AR Days)</label>
+                                            <input type="number" value="95" id="inputAR" class="w-full bg-white border border-gold rounded px-3 py-2 text-gray-700 focus:outline-none focus:ring-1 focus:ring-gold">
+                                        </div>
+                                    </div>
+                                    <p class="text-xs text-silver mt-2">&#9432; สามารถแก้ไขตัวเลข D/E และ AR Days ได้หากมีข้อมูลภายในเพิ่มเติม</p>
+                                    <button onclick="processStep(3)" class="w-full bg-olive text-white px-4 py-3 rounded-lg font-bold shadow hover:bg-opacity-90 transition-all mt-4">ประมวลผลคะแนนความเสี่ยง</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="step-4" class="step-transition">
+                            <div class="border-t pt-6">
+                                <h3 class="text-xl font-bold text-olive mb-6 text-center">ผลการประเมินความเสี่ยง</h3>
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center mb-6">
+                                    <div class="chart-container" style="height: 220px; max-height: 220px;">
+                                        <canvas id="scoreGaugeChart"></canvas>
+                                    </div>
+                                    <div class="space-y-4">
+                                        <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 text-center">
+                                            <p class="text-sm text-gray-500 mb-1">ระดับความเสี่ยง</p>
+                                            <p class="text-2xl font-bold text-silver" id="riskLevelText">MEDIUM RISK</p>
+                                        </div>
+                                        <div class="bg-[#Fdfbf5] p-4 rounded-xl border border-gold/30 text-center shadow-inner">
+                                            <p class="text-sm text-gray-600 mb-1">วงเงินแนะนำเบื้องต้น</p>
+                                            <p class="text-3xl font-bold text-gold">500,000 ฿</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg mb-8" id="warningBox">
+                                    <div class="flex items-start">
+                                        <span class="text-red-500 text-xl mr-3">&#9888;&#65039;</span>
+                                        <div>
+                                            <h4 class="font-bold text-red-800 text-sm">ข้อควรระวัง (Findings)</h4>
+                                            <p class="text-red-700 text-sm mt-1">ระยะเวลาเก็บหนี้ (AR Days) อยู่ที่ 95 วัน ซึ่งสูงกว่าค่าเฉลี่ยของกลุ่มผู้รับเหมา (75 วัน) อาจส่งผลต่อสภาพคล่องระยะสั้น</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="chart-container" style="height: 250px;">
+                                    <canvas id="benchmarkChart"></canvas>
+                                </div>
+
+                                <div class="mt-8 pt-6 border-t border-gray-200 flex flex-col md:flex-row gap-4 justify-end">
+                                    <button class="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+                                        &#128196; สร้าง PDF Report
+                                    </button>
+                                    <button onclick="alert('ส่งคำขออนุมัติไปยังผู้จัดการเรียบร้อยแล้ว'); navTo('approvals'); resetAssessment();" class="px-6 py-3 bg-gold hover-bg-gold text-white rounded-lg font-bold shadow-md transition-all flex items-center justify-center gap-2">
+                                        &#10145;&#65039; ส่งให้ ผจก. อนุมัติ
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </section>
+
+            <section id="view-approvals" class="hidden space-y-8">
+                <div>
+                    <h2 class="text-3xl font-bold text-olive mb-2">รายการขออนุมัติ</h2>
+                    <p class="text-gray-600">ตารางจัดการเวิร์กโฟลว์สำหรับผู้อนุมัติ แสดงสถานะคำขอ ข้อมูลสรุป และคะแนนความเสี่ยง เพื่อประกอบการตัดสินใจขั้นสุดท้าย</p>
+                </div>
+
+                <div class="glass-panel rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-gray-50 text-gray-500 text-sm border-b border-gray-200">
+                                    <th class="p-4 font-medium">วันที่</th>
+                                    <th class="p-4 font-medium">บริษัทลูกค้า</th>
+                                    <th class="p-4 font-medium">คะแนน</th>
+                                    <th class="p-4 font-medium">วงเงินที่ขอ</th>
+                                    <th class="p-4 font-medium">สถานะ</th>
+                                    <th class="p-4 font-medium text-center">จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-sm">
+                                <tr class="border-b border-gray-100 hover:bg-gray-50/50">
+                                    <td class="p-4 text-gray-600">16 มี.ค. 2026</td>
+                                    <td class="p-4 font-medium text-gray-800">บจก. เจริญก่อสร้างไทย</td>
+                                    <td class="p-4"><span class="bg-green-100 text-green-700 px-2 py-1 rounded font-bold">85</span></td>
+                                    <td class="p-4 font-medium">1,000,000 ฿</td>
+                                    <td class="p-4"><span class="flex items-center gap-1 text-amber-600"><span class="h-2 w-2 rounded-full bg-amber-500"></span> รอพิจารณา</span></td>
+                                    <td class="p-4 text-center"><button class="text-gold hover:underline font-medium">ตรวจสอบ</button></td>
+                                </tr>
+                                <tr class="border-b border-gray-100 hover:bg-gray-50/50">
+                                    <td class="p-4 text-gray-600">15 มี.ค. 2026</td>
+                                    <td class="p-4 font-medium text-gray-800">หจก. ทรัพย์มั่นคง</td>
+                                    <td class="p-4"><span class="bg-gray-200 text-gray-700 px-2 py-1 rounded font-bold">72</span></td>
+                                    <td class="p-4 font-medium">500,000 ฿</td>
+                                    <td class="p-4"><span class="flex items-center gap-1 text-amber-600"><span class="h-2 w-2 rounded-full bg-amber-500"></span> รอพิจารณา</span></td>
+                                    <td class="p-4 text-center"><button class="text-gold hover:underline font-medium">ตรวจสอบ</button></td>
+                                </tr>
+                                <tr class="border-b border-gray-100 hover:bg-gray-50/50 opacity-60">
+                                    <td class="p-4 text-gray-600">14 มี.ค. 2026</td>
+                                    <td class="p-4 font-medium text-gray-800">บจก. เอเชียวัสดุภัณฑ์</td>
+                                    <td class="p-4"><span class="bg-red-100 text-red-700 px-2 py-1 rounded font-bold">45</span></td>
+                                    <td class="p-4 font-medium">2,500,000 ฿</td>
+                                    <td class="p-4"><span class="flex items-center gap-1 text-gray-500"><span class="h-2 w-2 rounded-full bg-gray-400"></span> ปฏิเสธ</span></td>
+                                    <td class="p-4 text-center"><button class="text-gray-400 cursor-not-allowed">ปิดแล้ว</button></td>
+                                </tr>
+                                <tr class="border-b border-gray-100 hover:bg-gray-50/50">
+                                    <td class="p-4 text-gray-600">14 มี.ค. 2026</td>
+                                    <td class="p-4 font-medium text-gray-800">สมชาย เอ็นจิเนียริ่ง</td>
+                                    <td class="p-4"><span class="bg-green-100 text-green-700 px-2 py-1 rounded font-bold">92</span></td>
+                                    <td class="p-4 font-medium">800,000 ฿</td>
+                                    <td class="p-4"><span class="flex items-center gap-1 text-green-600"><span class="h-2 w-2 rounded-full bg-green-500"></span> อนุมัติแล้ว</span></td>
+                                    <td class="p-4 text-center"><button class="text-olive hover:underline font-medium">ดูเอกสาร</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <script>
+        let dashboardChartInstance = null;
+        let gaugeChartInstance = null;
+        let benchmarkChartInstance = null;
+
+        const state = {
+            currentSector: '',
+            calculatedScore: 72
+        };
+
+        function navTo(viewId) {
+            ['dashboard', 'assessment', 'approvals'].forEach(id => {
+                document.getElementById('view-' + id).classList.add('hidden');
+                document.getElementById('nav-' + id).classList.remove('bg-white/10', 'text-gold');
+                document.getElementById('nav-' + id).classList.add('hover:bg-white/5');
+            });
+            
+            document.getElementById('view-' + viewId).classList.remove('hidden');
+            document.getElementById('nav-' + viewId).classList.add('bg-white/10', 'text-gold');
+            document.getElementById('nav-' + viewId).classList.remove('hover:bg-white/5');
+
+            if(viewId === 'dashboard' && !dashboardChartInstance) {
+                renderDashboardChart();
+            }
+        }
+
+        function processStep(stepNum, data = null) {
+            if (stepNum === 1) {
+                const input = document.getElementById('companyInput').value;
+                if(!input) { alert('กรุณาระบุชื่อบริษัท'); return; }
+                document.getElementById('step-2').classList.add('step-active');
+            } 
+            else if (stepNum === 2) {
+                state.currentSector = data;
+                document.getElementById('step-3').classList.add('step-active');
+            }
+            else if (stepNum === 3) {
+                const de = parseFloat(document.getElementById('inputDE').value);
+                const ar = parseInt(document.getElementById('inputAR').value);
+                
+                state.calculatedScore = 100 - (de * 5) - ((ar - 60) * 0.5);
+                state.calculatedScore = Math.max(0, Math.min(100, Math.round(state.calculatedScore)));
+
+                document.getElementById('step-4').classList.add('step-active');
+                renderAssessmentCharts(ar, de);
+                
+                const warningBox = document.getElementById('warningBox');
+                if(ar > 75) {
+                    warningBox.style.display = 'block';
+                } else {
+                    warningBox.style.display = 'none';
+                }
+            }
+        }
+
+        function resetAssessment() {
+            document.getElementById('companyInput').value = '';
+            document.getElementById('step-2').classList.remove('step-active');
+            document.getElementById('step-3').classList.remove('step-active');
+            document.getElementById('step-4').classList.remove('step-active');
+            if(gaugeChartInstance) gaugeChartInstance.destroy();
+            if(benchmarkChartInstance) benchmarkChartInstance.destroy();
+        }
+
+        function renderDashboardChart() {
+            const ctx = document.getElementById('dashboardChart').getContext('2d');
+            dashboardChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['ต.ค.', 'พ.ย.', 'ธ.ค.', 'ม.ค.', 'ก.พ.', 'มี.ค.'],
+                    datasets: [{
+                        label: 'ยอดอนุมัติ (ล้านบาท)',
+                        data: [25, 32, 28, 40, 38, 45.2],
+                        backgroundColor: '#C5A059',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f0f0f0' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function renderAssessmentCharts(arDays, deRatio) {
+            if(gaugeChartInstance) gaugeChartInstance.destroy();
+            if(benchmarkChartInstance) benchmarkChartInstance.destroy();
+
+            const score = state.calculatedScore;
+            let gaugeColor = '#88929C'; 
+            if(score > 80) gaugeColor = '#C5A059'; 
+            else if (score < 50) gaugeColor = '#ef4444'; 
+
+            document.getElementById('riskLevelText').innerText = score > 80 ? 'LOW RISK' : (score < 50 ? 'HIGH RISK' : 'MEDIUM RISK');
+            document.getElementById('riskLevelText').style.color = gaugeColor;
+
+            const ctxGauge = document.getElementById('scoreGaugeChart').getContext('2d');
+            gaugeChartInstance = new Chart(ctxGauge, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Score', 'Remaining'],
+                    datasets: [{
+                        data: [score, 100 - score],
+                        backgroundColor: [gaugeColor, '#e2e8f0'],
+                        borderWidth: 0,
+                        cutout: '80%'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    rotation: -90,
+                    circumference: 180,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false }
+                    }
+                },
+                plugins: [{
+                    id: 'textCenter',
+                    beforeDraw: function(chart) {
+                        var width = chart.width, height = chart.height, ctx = chart.ctx;
+                        ctx.restore();
+                        var fontSize = (height / 80).toFixed(2);
+                        ctx.font = "bold " + fontSize + "em Prompt";
+                        ctx.textBaseline = "bottom";
+                        ctx.fillStyle = "#1E293B";
+                        var text = score + "",
+                            textX = Math.round((width - ctx.measureText(text).width) / 2),
+                            textY = height - 10;
+                        ctx.fillText(text, textX, textY);
+                        ctx.save();
+                    }
+                }]
+            });
+
+            const ctxBench = document.getElementById('benchmarkChart').getContext('2d');
+            benchmarkChartInstance = new Chart(ctxBench, {
+                type: 'bar',
+                data: {
+                    labels: ['AR Days (วัน)', 'D/E Ratio (เท่า)'],
+                    datasets: [
+                        {
+                            label: 'บริษัทลูกค้า',
+                            data: [arDays, deRatio * 20], 
+                            backgroundColor: '#3B4335',
+                            borderRadius: 4
+                        },
+                        {
+                            label: 'ค่าเฉลี่ยอุตสาหกรรม',
+                            data: [75, 1.5 * 20], 
+                            backgroundColor: '#d1d5db',
+                            borderRadius: 4
+                        }
+                    ]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let val = context.raw;
+                                    if(context.dataIndex === 1) val = val / 20; 
+                                    return context.dataset.label + ': ' + val;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { display: false },
+                        y: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        navTo('dashboard');
+    </script>
+</body>
+</html>
